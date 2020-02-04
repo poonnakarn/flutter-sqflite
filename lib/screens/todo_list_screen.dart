@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_sqflite/helpers/database_helper.dart';
 import 'add_task_screen.dart';
+import 'package:flutter_sqflite/models/task_model.dart';
+import 'package:intl/intl.dart';
 
 class TodoListScreen extends StatefulWidget {
   @override
@@ -7,21 +10,64 @@ class TodoListScreen extends StatefulWidget {
 }
 
 class _TodoListScreenState extends State<TodoListScreen> {
-  Widget _buildTask(int index) {
+  // Create task list
+  Future<List<Task>> _taskList;
+  final DateFormat _dateFormatter = DateFormat('MMM dd, yyyy');
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _updateTaskList();
+  }
+
+  _updateTaskList() {
+    setState(() {
+      _taskList = DatabaseHelper.instance.getTaskList();
+      // ได้ taskList มาเป็น future -> ต้องใช้ futureBuilder
+    });
+  }
+
+  Widget _buildTask(Task task) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 25.0),
       child: Column(
         children: <Widget>[
           ListTile(
-            title: Text('Task title'),
-            subtitle: Text('October 2,2019 • High'),
+            title: Text(
+              task.title,
+              style: TextStyle(
+                fontSize: 18.0,
+                decoration: task.status == 0
+                    ? TextDecoration.none
+                    : TextDecoration.lineThrough,
+              ),
+            ),
+            subtitle: Text(
+              '${_dateFormatter.format(task.date)} • ${task.priority}',
+              style: TextStyle(
+                fontSize: 15.0,
+                decoration: task.status == 0
+                    ? TextDecoration.none
+                    : TextDecoration.lineThrough,
+              ),
+            ),
             trailing: Checkbox(
-              value: true,
+              value: task.status == 1 ? true : false,
               onChanged: (value) {
-                print(value);
+                task.status = value ? 1 : 0;
+                DatabaseHelper.instance.updateTask(task);
+                _updateTaskList();
               },
               activeColor: Theme.of(context).primaryColor,
             ),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => AddTaskScreen(
+                          task: task,
+                          updateTaskList: _updateTaskList,
+                        ))),
           ),
           Divider(),
         ],
@@ -32,19 +78,37 @@ class _TodoListScreenState extends State<TodoListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        floatingActionButton: FloatingActionButton(
-          backgroundColor: Theme.of(context).primaryColor,
-          child: Icon(Icons.add),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddTaskScreen(),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Theme.of(context).primaryColor,
+        child: Icon(Icons.add),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddTaskScreen(
+              updateTaskList: _updateTaskList,
             ),
           ),
         ),
-        body: ListView.builder(
+      ),
+      body: FutureBuilder(
+        future: _taskList,
+        builder: (context, snapshot) {
+          // if no tasks
+          if (!snapshot.hasData) {
+            return Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          // if has tasks
+          final int completedTaskCount = snapshot.data
+              .where((Task task) => task.status == 1)
+              .toList()
+              .length;
+
+          return ListView.builder(
             padding: EdgeInsets.symmetric(vertical: 80.0),
-            itemCount: 10,
+            itemCount: 1 + snapshot.data.length,
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
@@ -65,7 +129,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
                         height: 10.0,
                       ),
                       Text(
-                        '1 of 10',
+                        '$completedTaskCount of ${snapshot.data.length}',
                         style: TextStyle(
                           color: Colors.grey,
                           fontSize: 20.0,
@@ -76,7 +140,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
                   ),
                 );
               }
-              return _buildTask(index);
-            }));
+              return _buildTask(snapshot.data[index - 1]);
+            },
+          );
+        },
+      ),
+    );
   }
 }
